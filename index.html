@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>好文收藏庫</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            dark: {
+              950: '#0a0a0b',
+              900: '#111113',
+              800: '#1a1a1e',
+              700: '#222228',
+              600: '#2a2a32',
+              500: '#3a3a45',
+            },
+            accent: {
+              DEFAULT: '#2dd4a8',
+              dim: '#1a9e7a',
+              soft: '#143d32',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    * { box-sizing: border-box; }
+    body { background: #0a0a0b; color: #e5e5e5; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans TC", sans-serif; }
+    .scrollbar-hide::-webkit-scrollbar { display: none; }
+    .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+    .heatmap-cell { transition: all 0.15s ease; }
+    .heatmap-cell:hover { transform: scale(1.15); z-index: 10; }
+    .card-hover { transition: all 0.2s ease; }
+    .card-hover:hover { background: #1f1f26; }
+    .fade-in { animation: fadeIn 0.3s ease; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+    .tab-active { background: #2dd4a8 !important; color: #0a0a0b !important; font-weight: 600; }
+    .sidebar-item-active { background: #143d32; color: #2dd4a8; border-left: 3px solid #2dd4a8; }
+    input, select, button { outline: none; }
+    .line-clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  </style>
+</head>
+<body class="min-h-screen bg-dark-950 text-gray-200">
+
+  <!-- Loading Overlay -->
+  <div id="loading" class="fixed inset-0 z-50 flex items-center justify-center bg-dark-950">
+    <div class="text-center">
+      <div class="w-12 h-12 border-4 border-accent border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+      <p class="text-gray-400">載入中...</p>
+    </div>
+  </div>
+
+  <!-- Setup Modal (first time) -->
+  <div id="setup-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/80 p-4">
+    <div class="bg-dark-800 rounded-2xl p-6 max-w-md w-full border border-dark-600">
+      <h2 class="text-xl font-bold mb-2 text-white">連接 Notion Database</h2>
+      <p class="text-sm text-gray-400 mb-4">請貼上你的 Notion Integration Token 同 Database ID</p>
+      
+      <label class="block text-sm text-gray-300 mb-1">Integration Token</label>
+      <input id="token-input" type="password" placeholder="secret_xxxxx..." 
+             class="w-full bg-dark-900 border border-dark-600 rounded-lg px-3 py-2.5 mb-3 text-sm focus:border-accent" />
+      
+      <label class="block text-sm text-gray-300 mb-1">Database ID</label>
+      <input id="dbid-input" type="text" value="22f32b21641182ea84e2815af9558487" 
+             class="w-full bg-dark-900 border border-dark-600 rounded-lg px-3 py-2.5 mb-4 text-sm focus:border-accent" />
+      
+      <div class="text-xs text-gray-500 mb-4 space-y-1">
+        <p>1. 去 <a href="https://www.notion.so/my-integrations" target="_blank" class="text-accent underline">Notion Integrations</a> 建立 Integration</p>
+        <p>2. 複製 Internal Integration Token</p>
+        <p>3. 喺 Database 頁面點「⋯」→ Connections → 加入你嘅 Integration</p>
+      </div>
+      
+      <button onclick="saveConfig()" class="w-full bg-accent text-dark-950 font-semibold py-2.5 rounded-lg hover:bg-accent-dim transition">
+        連接並載入
+      </button>
+      <p id="setup-error" class="text-red-400 text-sm mt-2 hidden"></p>
+    </div>
+  </div>
+
+  <!-- Main App -->
+  <div id="app" class="hidden min-h-screen flex flex-col lg:flex-row">
+
+    <!-- ===== LEFT SIDEBAR (Desktop) ===== -->
+    <aside class="hidden lg:flex flex-col w-56 bg-dark-900 border-r border-dark-700 shrink-0 h-screen sticky top-0">
+      <div class="p-4 border-b border-dark-700 flex items-center gap-2">
+        <div class="w-8 h-8 bg-accent rounded-lg flex items-center justify-center text-dark-950 font-bold text-lg">📚</div>
+        <span class="font-semibold text-white">好文收藏庫</span>
+      </div>
+      
+      <nav class="flex-1 overflow-y-auto p-3 space-y-1 scrollbar-hide" id="sidebar-nav">
+        <!-- Filled by JS -->
+      </nav>
+      
+      <div class="p-3 border-t border-dark-700 text-xs text-gray-500">
+        <div class="flex items-center gap-1.5">
+          <span class="w-2 h-2 rounded-full bg-accent"></span>
+          <span id="sync-time">同步中...</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- ===== MAIN CONTENT ===== -->
+    <main class="flex-1 flex flex-col min-h-screen lg:min-h-0">
+      
+      <!-- Top Header (Mobile + Desktop) -->
+      <header class="sticky top-0 z-30 bg-dark-900/95 backdrop-blur border-b border-dark-700">
+        <div class="flex items-center justify-between px-4 py-3">
+          <div class="flex items-center gap-3">
+            <button onclick="toggleMobileSidebar()" class="lg:hidden p-1.5 rounded-lg hover:bg-dark-700">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+            </button>
+            <div class="flex items-center gap-2">
+              <div class="w-7 h-7 bg-accent rounded-md flex items-center justify-center text-dark-950 text-sm font-bold">📚</div>
+              <span class="font-semibold text-white text-sm sm:text-base" id="header-title">好文收藏庫</span>
+            </div>
+          </div>
+          <div class="flex items-center gap-2">
+            <button onclick="refreshData()" class="p-2 rounded-lg hover:bg-dark-700 text-gray-400 hover:text-white" title="重新載入">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+            </button>
+            <button onclick="showSetup()" class="p-2 rounded-lg hover:bg-dark-700 text-gray-400 hover:text-white" title="設定">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- Tabs -->
+        <div class="flex px-4 gap-2 pb-3">
+          <button onclick="switchTab('list')" id="tab-list" class="flex-1 py-2 rounded-lg text-sm font-medium bg-dark-700 text-gray-300 tab-active">
+            文章列表
+          </button>
+          <button onclick="switchTab('diary')" id="tab-diary" class="flex-1 py-2 rounded-lg text-sm font-medium bg-dark-700 text-gray-300">
+            收藏日記
+          </button>
+        </div>
+      </header>
+
+      <!-- ===== LIST TAB ===== -->
+      <div id="view-list" class="flex-1 flex flex-col lg:flex-row overflow-hidden">
+        
+        <!-- Article List Area -->
+        <div class="flex-1 flex flex-col overflow-hidden">
+          <!-- Search + Filters -->
+          <div class="p-4 space-y-3 border-b border-dark-800">
+            <div class="flex gap-2">
+              <div class="flex-1 relative">
+                <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                <input id="search-input" type="text" placeholder="搜尋標題、作者、標籤..." 
+                       class="w-full bg-dark-800 border border-dark-600 rounded-xl pl-10 pr-4 py-2.5 text-sm focus:border-accent"
+                       oninput="applyFilters()" />
+              </div>
+              <button onclick="toggleFilterPanel()" class="px-3 py-2.5 bg-dark-800 border border-dark-600 rounded-xl text-sm flex items-center gap-1.5 hover:border-accent">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"/></svg>
+                <span>篩選</span>
+                <span id="filter-count" class="hidden bg-accent text-dark-950 text-xs font-bold px-1.5 rounded-full">0</span>
+              </button>
+            </div>
+
+            <!-- Category chips (horizontal scroll) -->
+            <div id="category-chips" class="flex gap-2 overflow-x-auto scrollbar-hide pb-1">
+              <!-- Filled by JS -->
+            </div>
+
+            <!-- Active filters + sort -->
+            <div class="flex items-center justify-between text-sm">
+              <div class="flex items-center gap-2">
+                <span id="result-count" class="text-gray-400">0 篇</span>
+                <button id="clear-filters" onclick="clearFilters()" class="text-red-400 text-xs hidden hover:underline">清除全部</button>
+              </div>
+              <div class="flex gap-2">
+                <select id="sort-select" onchange="applyFilters()" class="bg-dark-800 border border-dark-600 rounded-lg px-2 py-1 text-xs">
+                  <option value="newest">最新收藏</option>
+                  <option value="oldest">最舊收藏</option>
+                  <option value="title">標題 A-Z</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- Article List / Timeline -->
+          <div id="article-list" class="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-hide">
+            <!-- Filled by JS -->
+          </div>
+        </div>
+
+        <!-- Right Diary Panel (Desktop only, when list tab) -->
+        <aside id="diary-side" class="hidden xl:block w-80 border-l border-dark-700 bg-dark-900 overflow-y-auto shrink-0">
+          <!-- Will reuse diary content -->
+        </aside>
+      </div>
+
+      <!-- ===== DIARY TAB ===== -->
+      <div id="view-diary" class="hidden flex-1 overflow-y-auto p-4 lg:p-6">
+        <div class="max-w-4xl mx-auto space-y-6">
+          
+          <!-- Stats Cards -->
+          <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <div class="bg-accent rounded-2xl p-4 text-dark-950">
+              <div class="text-3xl font-bold" id="stat-total">0</div>
+              <div class="text-sm opacity-80 mt-1">收藏總數</div>
+            </div>
+            <div class="bg-dark-800 rounded-2xl p-4 border border-dark-600">
+              <div class="text-3xl font-bold text-white" id="stat-month">0</div>
+              <div class="text-sm text-gray-400 mt-1">本月新增</div>
+            </div>
+            <div class="bg-dark-800 rounded-2xl p-4 border border-dark-600">
+              <div class="text-3xl font-bold text-white" id="stat-unread">0</div>
+              <div class="text-sm text-gray-400 mt-1">待讀</div>
+            </div>
+            <div class="bg-dark-800 rounded-2xl p-4 border border-dark-600">
+              <div class="text-3xl font-bold text-white" id="stat-featured">0</div>
+              <div class="text-sm text-gray-400 mt-1">精華</div>
+            </div>
+          </div>
+
+          <!-- Heatmap -->
+          <div class="bg-dark-800 rounded-2xl p-4 border border-dark-600">
+            <div class="flex items-center justify-between mb-3">
+              <h3 class="font-semibold text-white">最近 10 週收藏熱度</h3>
+              <div class="flex items-center gap-1 text-xs text-gray-500">
+                <span>少</span>
+                <div class="w-3 h-3 rounded-sm bg-dark-600"></div>
+                <div class="w-3 h-3 rounded-sm bg-accent-soft"></div>
+                <div class="w-3 h-3 rounded-sm bg-accent-dim"></div>
+                <div class="w-3 h-3 rounded-sm bg-accent"></div>
+                <span>多</span>
+              </div>
+            </div>
+            <div id="heatmap" class="grid grid-cols-10 gap-1.5" style="grid-template-rows: repeat(7, minmax(0, 1fr));">
+              <!-- 10 weeks x 7 days = 70 cells, filled by JS -->
+            </div>
+            <p class="text-xs text-gray-500 mt-3" id="heatmap-legend">每格一天：空白 0 篇、淺 1 篇、中 2-3 篇、最濃 4 篇以上</p>
+          </div>
+
+          <!-- Monthly Bar Chart -->
+          <div class="bg-dark-800 rounded-2xl p-4 border border-dark-600">
+            <div class="flex items-center justify-between mb-4">
+              <h3 class="font-semibold text-white">每月收藏量</h3>
+              <span class="text-xs text-gray-500">點長條只看嗰個月</span>
+            </div>
+            <div id="monthly-chart" class="flex items-end gap-2 h-40">
+              <!-- Filled by JS -->
+            </div>
+          </div>
+
+          <!-- Category Breakdown -->
+          <div class="bg-dark-800 rounded-2xl p-4 border border-dark-600">
+            <h3 class="font-semibold text-white mb-3">收藏類型分佈</h3>
+            <div id="category-bars" class="space-y-2">
+              <!-- Filled by JS -->
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Mobile Sidebar Overlay -->
+  <div id="mobile-sidebar" class="fixed inset-0 z-40 hidden lg:hidden">
+    <div class="absolute inset-0 bg-black/60" onclick="toggleMobileSidebar()"></div>
+    <div class="absolute left-0 top-0 bottom-0 w-64 bg-dark-900 border-r border-dark-700 overflow-y-auto">
+      <div class="p-4 border-b border-dark-700 flex items-center justify-between">
+        <span class="font-semibold text-white">分類</span>
+        <button onclick="toggleMobileSidebar()" class="p-1 text-gray-400">✕</button>
+      </div>
+      <nav class="p-3 space-y-1" id="mobile-nav">
+        <!-- Filled by JS -->
+      </nav>
+    </div>
+  </div>
+
+  <!-- Article Detail Modal -->
+  <div id="detail-modal" class="fixed inset-0 z-50 hidden items-end sm:items-center justify-center bg-black/70">
+    <div class="bg-dark-900 w-full sm:max-w-lg sm:rounded-2xl max-h-[90vh] overflow-y-auto border border-dark-600">
+      <div class="sticky top-0 bg-dark-900 border-b border-dark-700 px-4 py-3 flex items-center justify-between">
+        <button onclick="closeDetail()" class="text-gray-400 hover:text-white p-1">← 返回</button>
+        <div class="flex gap-2">
+          <button id="detail-open-notion" class="text-xs text-gray-400 hover:text-accent">喺 Notion 開啟</button>
+        </div>
+      </div>
+      <div class="p-5" id="detail-content">
+        <!-- Filled by JS -->
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
